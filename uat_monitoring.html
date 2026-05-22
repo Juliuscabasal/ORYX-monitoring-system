@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .fit-table { table-layout: fixed; width: 100%; }
+    .fit-table th, .fit-table td { white-space: nowrap; padding: 10px 8px !important; font-size: 13px; overflow: hidden; }
+    .truncate-target { max-width: 19ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+    .row-selected { background-color: #f0f7ff !important; outline: 2px solid #3b82f6; transition: all 0.1s ease; }
+    tr:hover td { background-color: #f8fafc; }
+    #customContextMenu { box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); }
+    .calc-btn { padding: 0.5rem; background-color: #f1f5f9; border-radius: 0.375rem; transition: background-color 0.2s; font-size: 0.75rem; font-weight: 600; color: #334155; border: none; width: 100%; }
+    .calc-btn:hover { background-color: #e2e8f0; }
+    .calc-op { padding: 0.5rem; background-color: #eff6ff; color: #2563eb; border-radius: 0.375rem; transition: background-color 0.2s; font-size: 0.75rem; font-weight: 700; border: none; width: 100%; }
+    .calc-op:hover { background-color: #dbeafe; }
+    .calc-clear { padding: 0.5rem; background-color: #fef2f2; color: #dc2626; border-radius: 0.375rem; font-weight: 700; font-size: 0.75rem; border: none; width: 100%; }
+</style>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center hover:shadow-md transition-shadow">
+        <div class="bg-amber-100 p-4 rounded-xl mr-6"><i class="fas fa-file-signature text-amber-600 text-2xl"></i></div>
+        <div>
+            <p class="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">For Signature</p>
+            <h3 class="text-3xl font-black text-slate-800">{{ summary.signature }}</h3>
+        </div>
+    </div>
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center hover:shadow-md transition-shadow">
+        <div class="bg-amber-100 p-4 rounded-xl mr-6"><i class="fas fa-file-invoice-dollar text-amber-600 text-2xl"></i></div>
+        <div>
+            <p class="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">For Billing</p>
+            <h3 class="text-3xl font-black text-slate-800">{{ summary.billing }}</h3>
+        </div>
+    </div>
+</div>
+
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-bold text-slate-800">UAT Monitoring</h1>
+    <div class="flex space-x-3">
+        <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><i class="fas fa-search text-sm"></i></span>
+            <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search..." title="Search UATs" class="pl-10 pr-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 w-56 transition-all">
+        </div>
+        <button onclick="openUATModal()" title="Add New UAT Entry" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg shadow-lg font-medium transition"><i class="fas fa-plus mr-2"></i> Add UAT</button>
+    </div>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <table class="w-full text-left border-collapse fit-table" id="uatTable">
+        <thead class="bg-slate-50 border-b border-slate-100">
+            <tr>
+                <th class="p-4 uppercase w-[160px]">UAT#</th>
+                <th class="p-4 uppercase w-[160px]">CCR#</th>
+                <th class="p-4 uppercase">Dept</th>
+                <th class="p-4 uppercase">Personnel</th>
+                <th class="p-4 uppercase">IT In-Charge</th>
+                <th class="p-4 uppercase text-center w-[120px]">Dates</th>
+                <th class="p-4 uppercase text-center w-[60px]">Files</th>
+                <th class="p-4 uppercase w-[110px]">Status</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-50">
+            {% for uat in uats %}
+            <tr class="transition group cursor-default" oncontextmenu="showContextMenu(event, '{{ uat.id }}', '{{ uat.uat_no }}')">
+                <td class="font-medium text-blue-600">{{ uat.uat_no }}</td>
+                <td class="text-slate-600">{{ uat.ccr }}</td>
+                <td><span class="truncate-target text-slate-600" title="{{ uat.dept }}">{{ uat.dept }}</span></td>
+                <td><span class="truncate-target text-slate-600" title="{{ uat.accepting_personnel }}">{{ uat.accepting_personnel }}</span></td>
+                <td><span class="truncate-target text-slate-600" title="{{ uat.it_incharge }}">{{ uat.it_incharge }}</span></td>
+                <td class="text-slate-500 font-mono text-center">{{ uat.date_start[5:10] if uat.date_start else '--' }} / {{ uat.date_end[5:10] if uat.date_end else '--' }}</td>
+                <td class="text-center">{% if uat.files %}<button onclick="viewFiles('{{ uat.uat_no }}', '{{ uat.id }}')" title="View Files" class="text-blue-500 hover:text-blue-700"><i class="fas fa-paperclip"></i></button>{% endif %}</td>
+                <td>
+                    {% set s = uat.status.lower() if uat.status else '' %}
+                    <span class="px-3 py-1 rounded-full text-[10px] font-bold uppercase border
+                        {{ 'bg-green-100 text-green-700 border-green-200' if s == 'billed' }}
+                        {{ 'bg-yellow-100 text-yellow-700 border-yellow-200' if s == 'for billing' or s == 'for signature' }}
+                        {{ 'bg-orange-100 text-orange-700 border-orange-200' if s == 'pending' }}
+                        {{ 'bg-slate-100 text-slate-600 border-slate-200' if s not in ['billed', 'for billing', 'for signature', 'pending'] }}">
+                        {{ uat.status if uat.status else 'Unset' }}
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div id="uatModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[90vh]" id="modalContent">
+        <div class="p-6 border-b flex justify-between items-center bg-white rounded-t-2xl">
+            <h2 id="modalTitle" class="text-2xl font-bold text-slate-800">UAT Entry</h2>
+            <button onclick="closeUATModal()" title="Close Modal" class="text-slate-400 hover:text-slate-600 text-xl"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-8 relative">
+            <form id="uatForm" onsubmit="event.preventDefault(); saveUAT();">
+                <input type="hidden" id="uat_id" name="uat_id">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div><label for="uat_no" class="block text-sm font-semibold mb-1">UAT#</label><input type="text" id="uat_no" name="uat_no" required title="UAT Number" class="w-full p-2 border rounded-lg"></div>
+                    <div><label for="ccr" class="block text-sm font-semibold mb-1">CCR#</label><input type="text" id="ccr" name="ccr" required title="CCR Number" class="w-full p-2 border rounded-lg"></div>
+                    <div><label for="dept" class="block text-sm font-semibold mb-1">Dept</label><input type="text" id="dept" name="dept" required title="Department" class="w-full p-2 border rounded-lg"></div>
+                    <div><label for="accepting_personnel" class="block text-sm font-semibold mb-1">Personnel</label><input type="text" id="accepting_personnel" name="accepting_personnel" required title="Personnel" class="w-full p-2 border rounded-lg"></div>
+                    <div><label for="it_incharge" class="block text-sm font-semibold mb-1">IT In-Charge</label><input type="text" id="it_incharge" name="it_incharge" required title="IT In-Charge" class="w-full p-2 border rounded-lg"></div>
+                    <div><label for="status_select" class="block text-sm font-semibold mb-1">Status</label>
+                        <select id="status_select" name="status" title="Select Status" class="w-full p-2 border rounded-lg">
+                            <option value="">-- Unset --</option>
+                            <option value="For Signature">For Signature</option>
+                            <option value="For Billing">For Billing</option>
+                            <option value="Billed">Billed</option>
+                        </select>
+                    </div>
+                    <div><label for="date_start" class="block text-sm font-semibold mb-1">Start Date</label><input type="date" id="date_start" name="date_start" title="Start Date" class="w-full p-2 border rounded-lg"></div>
+                    <div><label for="date_end" class="block text-sm font-semibold mb-1">End Date</label><input type="date" id="date_end" name="date_end" title="End Date" class="w-full p-2 border rounded-lg"></div>
+                    <div><label for="hr_per_day" class="block text-sm font-semibold mb-1">HR Per Day</label><input type="text" id="hr_per_day" name="hr_per_day" title="Hours per Day" class="w-full p-2 border rounded-lg"></div>
+                    <div class="relative">
+                        <label class="block text-sm font-semibold mb-1">Total Cost</label>
+                        <div class="relative flex items-center">
+                            <input type="text" id="total_cost" name="total_cost" placeholder="0.00" title="Total Cost" class="w-full p-2 pr-10 border rounded-lg focus:ring-2 focus:ring-blue-400 outline-none transition">
+                            <button type="button" id="calcTrigger" title="Open Calculator" class="absolute right-2 text-slate-400 hover:text-blue-600 transition p-1"><i class="fas fa-calculator"></i></button>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-8 pt-6 border-t border-slate-100">
+                    <label for="attachments" class="block text-sm font-semibold mb-2 text-slate-700">Attachments</label>
+                    <div class="bg-slate-50 p-4 rounded-xl border border-dashed border-slate-200">
+                        <input type="file" id="attachments" name="attachments" multiple title="Upload Files" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-all cursor-pointer">
+                    </div>
+                </div>
+            </form>
+            <div id="costCalculator" class="hidden absolute bg-white shadow-2xl rounded-xl border border-slate-200 p-3 w-48 z-[10000]">
+                <div class="mb-2"><input type="text" id="calcDisplay" readonly title="Calculator Display" class="w-full text-right p-2 bg-slate-50 rounded border font-mono text-sm outline-none" placeholder="0"></div>
+                <div class="grid grid-cols-4 gap-1"> 
+                    <button type="button" onclick="calcInput('7')" title="7" class="calc-btn">7</button>
+                    <button type="button" onclick="calcInput('8')" title="8" class="calc-btn">8</button>
+                    <button type="button" onclick="calcInput('9')" title="9" class="calc-btn">9</button>
+                    <button type="button" onclick="calcInput('/')" title="Divide" class="calc-op">/</button>
+                    <button type="button" onclick="calcInput('4')" title="4" class="calc-btn">4</button>
+                    <button type="button" onclick="calcInput('5')" title="5" class="calc-btn">5</button>
+                    <button type="button" onclick="calcInput('6')" title="6" class="calc-btn">6</button>
+                    <button type="button" onclick="calcInput('*')" title="Multiply" class="calc-op">*</button>
+                    <button type="button" onclick="calcInput('1')" title="1" class="calc-btn">1</button>
+                    <button type="button" onclick="calcInput('2')" title="2" class="calc-btn">2</button>
+                    <button type="button" onclick="calcInput('3')" title="3" class="calc-btn">3</button>
+                    <button type="button" onclick="calcInput('-')" title="Subtract" class="calc-op">-</button>
+                    <button type="button" onclick="calcInput('0')" title="0" class="calc-btn">0</button>
+                    <button type="button" onclick="calcInput('.')" title="Decimal" class="calc-btn">.</button>
+                    <button type="button" onclick="calcClear()" title="Clear" class="calc-clear">C</button>
+                    <button type="button" onclick="calcInput('+')" title="Add" class="calc-op">+</button>
+                </div>
+                <button type="button" onclick="calcResult()" title="Apply Calculation" class="w-full mt-2 p-2 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-lg hover:bg-blue-700 transition">Apply Amount</button>
+            </div>
+        </div>
+        <div class="p-6 border-t bg-slate-50 flex justify-end space-x-4 rounded-b-2xl">
+            <button onclick="closeUATModal()" title="Cancel Entry" class="px-6 py-2 text-slate-500 font-bold">Cancel</button>
+            <button onclick="saveUAT()" title="Save Entry" class="px-10 py-2 bg-blue-600 text-white rounded-xl font-bold">Save UAT</button>
+        </div>
+    </div>
+</div>
+
+<div id="customContextMenu" class="hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white shadow-[0_0_50px_rgba(0,0,0,0.2)] rounded-2xl border border-slate-200 py-3 w-64 z-[9999]">
+    <div class="px-5 py-2 border-b border-slate-100 mb-2">
+        <p id="menuTitle" class="text-xs font-black text-slate-400 uppercase tracking-widest">Options</p>
+    </div>
+    <button onclick="handleMenuAction('edit')" title="Edit this record" class="w-full text-left px-5 py-3 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-600 flex items-center transition font-medium">
+        <i class="fas fa-edit mr-3 text-blue-500 text-lg"></i> Edit Record
+    </button>
+    <button onclick="handleMenuAction('delete')" title="Delete this record" class="w-full text-left px-5 py-3 text-sm text-red-600 hover:bg-red-50 flex items-center transition font-medium">
+        <i class="fas fa-trash-alt mr-3 text-red-400 text-lg"></i> Delete Record
+    </button>
+</div>
+
+<div id="fileViewerModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[70] backdrop-blur-sm">
+    <div class="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl">
+        <div class="flex justify-between items-center mb-4 border-b pb-2"><h3 class="font-bold text-slate-800">Files for <span id="viewUatNo" class="text-blue-600"></span></h3><button onclick="closeFileViewer()" title="Close viewer" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button></div>
+        <div id="viewerFileList" class="space-y-2 max-h-60 overflow-y-auto pr-2"></div>
+        <div class="mt-6 text-right"><button onclick="closeFileViewer()" class="text-sm font-bold text-blue-600 uppercase">Close</button></div>
+    </div>
+</div>
+
+<script>
+    let currentActiveId = null;
+    const calcDiv = document.getElementById('costCalculator');
+    const calcDisplay = document.getElementById('calcDisplay');
+    const totalCostInput = document.getElementById('total_cost');
+    const calcTrigger = document.getElementById('calcTrigger');
+    const modalContent = document.getElementById('modalContent');
+
+    // BUG FIX: Prevent empty space double-clicks from opening file explorer
+    modalContent.addEventListener('dblclick', function(e) {
+        if (e.target.tagName !== 'INPUT') {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    });
+
+    totalCostInput.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+
+    calcTrigger.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const isHidden = calcDiv.classList.contains('hidden');
+        if (isHidden) {
+            const rect = calcTrigger.getBoundingClientRect();
+            const modalBody = document.querySelector('.flex-1.overflow-y-auto.p-8');
+            const bodyRect = modalBody.getBoundingClientRect();
+            calcDiv.style.left = `${rect.left - bodyRect.left - 150}px`; 
+            calcDiv.style.top = `${rect.bottom - bodyRect.top + 5}px`;
+            calcDiv.classList.remove('hidden');
+        } else { calcDiv.classList.add('hidden'); }
+    });
+
+    document.addEventListener('mousedown', function(e) {
+        if (!calcDiv.contains(e.target) && e.target !== calcTrigger) { calcDiv.classList.add('hidden'); }
+    });
+
+    function calcInput(val) { calcDisplay.value += val; }
+    function calcClear() { calcDisplay.value = ''; }
+    function calcResult() {
+        try {
+            const result = eval(calcDisplay.value);
+            if (!isNaN(result)) { totalCostInput.value = result.toFixed(2); calcDiv.classList.add('hidden'); }
+        } catch (err) { calcDisplay.value = 'Error'; setTimeout(calcClear, 1000); }
+    }
+
+    function clearHighlights() { document.querySelectorAll('tr').forEach(tr => tr.classList.remove('row-selected')); }
+
+    function showContextMenu(e, id, refNo) {
+        e.preventDefault(); // Stop the default browser right-click menu
+        currentActiveId = id;
+        
+        // Highlight the selected row
+        if (typeof clearHighlights === "function") clearHighlights();
+        else document.querySelectorAll('tr').forEach(tr => tr.classList.remove('row-selected'));
+        
+        const row = e.target.closest('tr');
+        if (row) row.classList.add('row-selected');
+        
+        // Update the title and show the menu
+        const menu = document.getElementById('customContextMenu');
+        const titleEl = document.getElementById('menuTitle');
+        if(titleEl) titleEl.innerText = "Record: " + refNo; 
+        
+        // Make it visible (Tailwind CSS keeps it dead-center)
+        menu.classList.remove('hidden');
+        
+        // Auto-close it when the user clicks anywhere else on the screen
+        const closeMenu = () => { 
+            menu.classList.add('hidden'); 
+            if (typeof clearHighlights === "function") clearHighlights();
+            else document.querySelectorAll('tr').forEach(tr => tr.classList.remove('row-selected'));
+        };
+        setTimeout(() => { document.addEventListener('click', closeMenu, { once: true }); }, 10);
+    }
+
+    function handleMenuAction(action) {
+        if (action === 'edit') editUAT(currentActiveId);
+        else if (action === 'delete') deleteUAT(currentActiveId);
+        document.getElementById('customContextMenu').classList.add('hidden');
+        clearHighlights();
+    }
+
+    function openUATModal() {
+        document.getElementById('uatForm').reset();
+        document.getElementById('uat_id').value = "";
+        document.getElementById('modalTitle').innerText = "Add New UAT";
+        document.getElementById('uatModal').classList.remove('hidden');
+        calcClear();
+        calcDiv.classList.add('hidden');
+    }
+
+    function closeUATModal() { document.getElementById('uatModal').classList.add('hidden'); calcDiv.classList.add('hidden'); }
+    function closeFileViewer() { document.getElementById('fileViewerModal').classList.add('hidden'); }
+
+    async function editUAT(id) {
+        try {
+            const res = await fetch(`/api/get_uat/${id}`);
+            const data = await res.json();
+            if (res.ok) {
+                document.getElementById('uat_id').value = data.id;
+                document.getElementById('uat_no').value = data.uat_no;
+                document.getElementById('ccr').value = data.ccr;
+                document.getElementById('dept').value = data.dept;
+                document.getElementById('accepting_personnel').value = data.accepting_personnel;
+                document.getElementById('it_incharge').value = data.it_incharge;
+                document.getElementById('date_start').value = data.date_start;
+                document.getElementById('date_end').value = data.date_end;
+                document.getElementById('hr_per_day').value = data.hr_per_day;
+                document.getElementById('total_cost').value = data.total_cost;
+                document.getElementById('status_select').value = data.status || "";
+                document.getElementById('modalTitle').innerText = "Edit UAT #" + data.uat_no;
+                document.getElementById('uatModal').classList.remove('hidden');
+                calcClear();
+            }
+        } catch (err) { alert("Could not load UAT details."); }
+    }
+
+    async function saveUAT() {
+        const formData = new FormData(document.getElementById('uatForm'));
+        const res = await fetch('/api/save_uat', { method: 'POST', body: formData });
+        if (res.ok) location.reload();
+        else alert("Failed to save UAT.");
+    }
+
+    async function deleteUAT(id) {
+        if(confirm("Delete permanently?")) {
+            const res = await fetch(`/api/delete_uat/${id}`, { method: 'DELETE' });
+            if (res.ok) location.reload();
+        }
+    }
+
+    function filterTable() {
+        const input = document.getElementById("searchInput").value.toUpperCase();
+        const tr = document.getElementById("uatTable").getElementsByTagName("tr");
+        for (let i = 1; i < tr.length; i++) {
+            let txt = tr[i].innerText.toUpperCase();
+            tr[i].style.display = txt.includes(input) ? "" : "none";
+        }
+    }
+
+    // CLEANED UP INDIVIDUAL FILE LOGIC
+    async function viewFiles(uatNo, id) {
+        try {
+            const res = await fetch(`/api/get_uat/${id}`);
+            const data = await res.json();
+            if (res.ok) {
+                document.getElementById('viewUatNo').innerText = uatNo;
+                const list = document.getElementById('viewerFileList');
+                list.innerHTML = data.files && data.files.length ? data.files.map(f => `
+                    <div id="file-row-${f.id}" class="flex justify-between items-center p-3 bg-slate-50 rounded-lg border mb-2 group">
+                        <span class="text-xs truncate w-40 font-medium text-slate-600">${f.filename.split('_').slice(2).join('_')}</span>
+                        <div class="flex items-center space-x-3">
+                            <a href="/download/${f.filename}" target="_blank" class="text-blue-600 hover:text-blue-800" title="Download"><i class="fas fa-download"></i></a>
+                            <button onclick="deleteFile(${f.id}, 'uat')" class="text-red-400 hover:text-red-600 transition" title="Delete File"><i class="fas fa-trash-alt"></i></button>
+                        </div>
+                    </div>`).join('') : '<p class="text-center text-xs text-slate-400 italic">No files attached.</p>';
+                document.getElementById('fileViewerModal').classList.remove('hidden');
+            }
+        } catch (err) { alert("Error fetching files."); }
+    }
+
+    async function deleteFile(fileId, type) {
+        if (!confirm("Delete this specific file?")) return;
+        const url = type === 'po' ? `/api/delete_po_file/${fileId}` : `/api/delete_uat_file/${fileId}`;
+        const res = await fetch(url, { method: 'DELETE' });
+        if (res.ok) {
+            document.getElementById(`file-row-${fileId}`).remove();
+            const list = document.getElementById('viewerFileList');
+            if (list.children.length === 0) list.innerHTML = '<p class="text-center text-xs text-slate-400 italic">No files attached.</p>';
+        } else { alert("Delete failed."); }
+    }
+</script>
+{% endblock %}

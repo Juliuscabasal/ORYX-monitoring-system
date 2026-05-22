@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    .fit-table { table-layout: fixed; width: 100%; }
+    .fit-table th, .fit-table td { white-space: nowrap; padding: 10px 8px !important; font-size: 13px; overflow: hidden; }
+    .truncate-target { max-width: 35ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+    .row-selected { background-color: #f0f7ff !important; outline: 2px solid #3b82f6; transition: all 0.1s ease; }
+    #customContextMenu { box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); }
+</style>
+
+<div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Open</p>
+        <h3 class="text-2xl font-black text-blue-600">{{ summary.open }}</h3>
+    </div>
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pending</p>
+        <h3 class="text-2xl font-black text-orange-600">{{ summary.pending }}</h3>
+    </div>
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Approved</p>
+        <h3 class="text-2xl font-black text-green-600">{{ summary.approved }}</h3>
+    </div>
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Closed</p>
+        <h3 class="text-2xl font-black text-slate-800">{{ summary.closed }}</h3>
+    </div>
+    <div class="p-4 rounded-xl shadow-sm border {{ 'bg-red-50 border-red-200' if summary.urgent > 0 else 'bg-white border-slate-100' }}">
+        <p class="text-[10px] font-bold {{ 'text-red-400' if summary.urgent > 0 else 'text-slate-400' }} uppercase tracking-widest">Urgent</p>
+        <h3 class="text-2xl font-black {{ 'text-red-600' if summary.urgent > 0 else 'text-slate-300' }}">{{ summary.urgent }}</h3>
+    </div>
+</div>
+
+<div class="flex flex-wrap justify-between items-center mb-6 gap-4">
+    <h1 class="text-2xl font-bold text-slate-800">PR Monitoring</h1>
+    
+    <div class="flex flex-wrap items-center space-x-3">
+        <div class="flex items-center space-x-2 bg-white p-1 rounded-lg border shadow-sm">
+            <input type="date" id="exportStart" title="Start Date" class="p-1.5 text-sm rounded outline-none text-slate-600 cursor-pointer">
+            <span class="text-slate-400 text-sm font-bold">to</span>
+            <input type="date" id="exportEnd" title="End Date" class="p-1.5 text-sm rounded outline-none text-slate-600 cursor-pointer">
+            <button onclick="exportPRExcel()" title="Export to Excel" class="bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 transition">
+                <i class="fas fa-file-excel mr-1"></i> Export
+            </button>
+        </div>
+
+        <div class="relative">
+            <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search items or comments..." title="Search records"
+                   class="p-2 border rounded-lg w-64 shadow-sm outline-none focus:ring-2 focus:ring-blue-400">
+        </div>
+        <button onclick="openPRModal()" title="Add New Purchase Request" class="bg-blue-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-blue-700 transition shadow-lg">
+            <i class="fas fa-plus mr-2"></i> Add PR
+        </button>
+    </div>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <table class="w-full text-left fit-table" id="prTable">
+        <thead class="bg-slate-50 border-b">
+            <tr class="text-slate-600 font-bold uppercase text-[11px]">
+                <th class="p-4 w-[120px]">Purchase #</th>
+                <th class="p-4 w-[150px]">Location</th>
+                <th class="p-4">Item/Description</th>
+                <th class="p-4 w-[130px]">Status</th>
+                <th class="p-4">PR Comment</th>
+                <th class="p-4 w-[120px]">PO #</th>
+                <th class="p-4 w-[100px]">Doc Date</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-50">
+            {% for pr in prs %}
+            <tr class="hover:bg-slate-50 cursor-default transition" oncontextmenu="showContextMenu(event, '{{ pr.id }}', '{{ pr.purchase_no }}')">
+                <td class="p-4 font-medium text-blue-600">{{ pr.purchase_no }}</td>
+                <td class="p-4 text-slate-600">{{ pr.location }}</td>
+                <td class="p-4">
+                    {% set desc_str = pr.items|map(attribute='description')|join(', ') %}
+                    <span class="truncate-target text-slate-600" title="{{ desc_str }}">{{ desc_str }}</span>
+                </td>
+                <td class="p-4">
+                    <div class="flex items-center space-x-2">
+                        <span class="px-2 py-1 rounded-full text-[9px] font-bold uppercase border
+                            {{ 'bg-green-100 text-green-700 border-green-200' if pr.status == 'Approved' }}
+                            {{ 'bg-blue-100 text-blue-700 border-blue-200' if pr.status == 'Closed' }}
+                            {{ 'bg-yellow-100 text-yellow-700 border-yellow-200' if pr.status == 'Open' }}
+                            {{ 'bg-orange-100 text-orange-700 border-orange-200' if pr.status == 'Pending' }}
+                            {{ 'bg-red-100 text-red-700 border-red-200' if pr.status == 'Others' }}">
+                            {{ pr.status }}
+                        </span>
+                        
+                        {% if pr.status == 'Others' and pr.urgent_reason %}
+                        <button onclick="showReasonModal(this.dataset.reason)" data-reason="{{ pr.urgent_reason }}" title="View Urgent Reason" class="text-red-500 hover:text-red-700 transition transform hover:scale-110">
+                            <i class="fas fa-exclamation-circle text-lg drop-shadow-sm"></i>
+                        </button>
+                        {% endif %}
+                    </div>
+                </td>
+                <td class="p-4"><span class="truncate-target text-slate-500 italic" title="{{ pr.remarks }}">{{ pr.remarks or '--' }}</span></td>
+                <td class="p-4 text-slate-600">{{ pr.po_no or '--' }}</td>
+                <td class="p-4 text-slate-500 font-mono text-xs">{{ pr.doc_date }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div id="reasonModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[80] p-4 backdrop-blur-sm transition-opacity">
+    <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl flex flex-col overflow-hidden">
+        <div class="p-4 bg-red-50 border-b border-red-100 flex justify-between items-center">
+            <h3 class="font-bold text-red-700 flex items-center">
+                <i class="fas fa-exclamation-triangle mr-2 text-red-500"></i> Urgent Reason
+            </h3>
+            <button onclick="closeReasonModal()" title="Close popup" class="text-red-400 hover:text-red-600 transition"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="p-6">
+            <p id="displayReasonText" class="text-slate-700 text-sm leading-relaxed"></p>
+        </div>
+        <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+            <button onclick="closeReasonModal()" title="Close popup" class="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold transition text-sm">Close</button>
+        </div>
+    </div>
+</div>
+
+<div id="prModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh]">
+        <div class="p-6 border-b flex justify-between items-center">
+            <h2 id="modalTitle" class="text-2xl font-bold text-slate-800">PR Entry</h2>
+            <button onclick="closePRModal()" title="Close dialog" class="text-slate-400 hover:text-slate-600 text-xl"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-8">
+            <form id="prForm">
+                <input type="hidden" id="pr_id" name="pr_id">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="purchase_no" class="block text-sm font-semibold mb-1">Purchase No</label>
+                        <input type="text" id="purchase_no" name="purchase_no" required title="Enter Purchase Number" class="w-full p-2 border rounded-lg">
+                    </div>
+                    <div>
+                        <label for="location" class="block text-sm font-semibold mb-1">Location</label>
+                        <select id="location" name="location" required title="Select Location" class="w-full p-2 border rounded-lg">
+                            <option value="" disabled selected>Select Location...</option>
+                            <option value="DS">DS</option>
+                            <option value="RD">RD</option>
+                        </select>
+                    </div>
+
+                    <div class="md:col-span-2 mt-2">
+                        <label class="block text-sm font-semibold mb-2">Itemized Breakdown</label>
+                        <table class="w-full text-left border border-slate-200 rounded-lg overflow-hidden" id="itemsTable">
+                            <thead class="bg-slate-50 border-b border-slate-200">
+                                <tr class="text-[11px] text-slate-500 uppercase tracking-widest">
+                                    <th class="p-3 w-20">Qty</th>
+                                    <th class="p-3">Item / Description</th>
+                                    <th class="p-3 w-12 text-center">
+                                        <button type="button" onclick="addPRItem()" title="Add Item" class="text-blue-600 hover:text-blue-800"><i class="fas fa-plus"></i></button>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="prItemsBody" class="divide-y divide-slate-100">
+                                </tbody>
+                        </table>
+                        <input type="hidden" id="items_json" name="items_json">
+                    </div>
+                    
+                    <div>
+                        <label for="status_select" class="block text-sm font-semibold mb-1 mt-2">Status</label>
+                        <select id="status_select" name="status" onchange="toggleUrgentSection()" title="Select Request Status" class="w-full p-2 border rounded-lg">
+                            <option value="Pending">Pending</option>
+                            <option value="Open">Open</option>
+                            <option value="Approved">Approved</option>
+                            <option value="Closed">Closed</option>
+                            <option value="Others">Others</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="doc_date" class="block text-sm font-semibold mb-1 mt-2">Document Date</label>
+                        <input type="date" id="doc_date" name="doc_date" required title="Select Document Date" class="w-full p-2 border rounded-lg">
+                    </div>
+
+                    <div id="urgentSection" class="hidden md:col-span-2">
+                        <label for="urgent_reason" class="block text-sm font-semibold mb-1 text-red-600">Urgent Reason <span class="text-xs font-normal italic">(Required for 'Others')</span></label>
+                        <input type="text" id="urgent_reason" name="urgent_reason" placeholder="Why is this urgent?" title="Enter Urgent Reason" class="w-full p-2 border border-red-300 bg-red-50 rounded-lg outline-none focus:ring-2 focus:ring-red-400 transition-all">
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label for="remarks" class="block text-sm font-semibold mb-1 text-slate-700">PR Comment</label>
+                        <input type="text" id="remarks" name="remarks" placeholder="Enter general notes or comments..." title="Enter PR Comment" class="w-full p-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-400">
+                    </div>
+
+                    <div>
+                        <label for="po_no_input" class="block text-sm font-semibold mb-1">PO # (Optional)</label>
+                        <input type="text" id="po_no_input" name="po_no" title="Enter PO Number" class="w-full p-2 border rounded-lg">
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="p-6 border-t bg-slate-50 flex justify-end space-x-4 rounded-b-2xl">
+            <button onclick="closePRModal()" title="Cancel and close" class="px-6 py-2 text-slate-500 font-bold hover:text-slate-700 transition">Cancel</button>
+            <button onclick="savePR()" title="Save PR entry" class="px-10 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition shadow-md">Save PR</button>
+        </div>
+    </div>
+</div>
+
+<div id="customContextMenu" class="hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white shadow-[0_0_50px_rgba(0,0,0,0.2)] rounded-2xl border border-slate-200 py-3 w-64 z-[9999]">
+    <div class="px-5 py-2 border-b border-slate-100 mb-2">
+        <p id="menuTitle" class="text-xs font-black text-slate-400 uppercase tracking-widest">Options</p>
+    </div>
+    <button onclick="handleMenuAction('edit')" title="Edit this record" class="w-full text-left px-5 py-3 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-600 flex items-center transition font-medium">
+        <i class="fas fa-edit mr-3 text-blue-500 text-lg"></i> Edit Record
+    </button>
+    <button onclick="handleMenuAction('delete')" title="Delete this record" class="w-full text-left px-5 py-3 text-sm text-red-600 hover:bg-red-50 flex items-center transition font-medium">
+        <i class="fas fa-trash-alt mr-3 text-red-400 text-lg"></i> Delete Record
+    </button>
+</div>
+
+<script>
+    let currentActiveId = null;
+
+    // --- ITEM BREAKDOWN LOGIC ---
+    function addPRItem(desc = '', qty = 1) {
+        const tbody = document.getElementById('prItemsBody');
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="p-2"><input type="number" min="1" class="item-qty w-full p-2 border rounded-lg text-sm outline-none focus:border-blue-400" title="Quantity" value="${qty}"></td>
+            <td class="p-2"><input type="text" class="item-desc w-full p-2 border rounded-lg text-sm outline-none focus:border-blue-400" title="Description" placeholder="Description..." value="${desc}"></td>
+            <td class="p-2 text-center">
+                <button type="button" onclick="this.closest('tr').remove()" title="Remove Item" class="text-red-400 hover:text-red-600"><i class="fas fa-trash-alt"></i></button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    function gatherItems() {
+        const rows = document.querySelectorAll('#prItemsBody tr');
+        const items = [];
+        rows.forEach(row => {
+            const desc = row.querySelector('.item-desc').value;
+            const qty = row.querySelector('.item-qty').value;
+            if(desc) items.push({description: desc, qty: qty});
+        });
+        document.getElementById('items_json').value = JSON.stringify(items);
+    }
+
+    // --- EXCEL LOGIC ---
+    function exportPRExcel() {
+        const start = document.getElementById('exportStart').value;
+        const end = document.getElementById('exportEnd').value;
+        let url = '/api/export_pr_excel';
+        
+        if (start && end) {
+            url += `?start=${start}&end=${end}`;
+        } else if (start || end) {
+            alert("Please select BOTH start and end dates to filter, or leave both blank to export all data.");
+            return;
+        }
+        
+        window.location.href = url;
+    }
+
+    function showReasonModal(reasonText) {
+        document.getElementById('displayReasonText').innerText = reasonText || "No reason provided.";
+        document.getElementById('reasonModal').classList.remove('hidden');
+    }
+
+    function closeReasonModal() { document.getElementById('reasonModal').classList.add('hidden'); }
+
+    function filterTable() {
+        const input = document.getElementById("searchInput").value.toUpperCase();
+        const tr = document.getElementById("prTable").getElementsByTagName("tr");
+        for (let i = 1; i < tr.length; i++) {
+            // Search Description (Cell 2) and PR Comment (Cell 4)
+            let desc = tr[i].cells[2].innerText.toUpperCase();
+            let comment = tr[i].cells[4].innerText.toUpperCase();
+            tr[i].style.display = (desc.includes(input) || comment.includes(input)) ? "" : "none";
+        }
+    }
+
+    function toggleUrgentSection() {
+        const status = document.getElementById('status_select').value;
+        const section = document.getElementById('urgentSection');
+        const reasonInput = document.getElementById('urgent_reason');
+        
+        if (status === 'Others') {
+            section.classList.remove('hidden');
+            reasonInput.setAttribute('required', 'true');
+        } else {
+            section.classList.add('hidden');
+            reasonInput.removeAttribute('required');
+            reasonInput.value = '';
+        }
+    }
+
+    function showContextMenu(e, id, refNo) {
+        e.preventDefault(); // Stop the default browser right-click menu
+        currentActiveId = id;
+        
+        // Highlight the selected row
+        if (typeof clearHighlights === "function") clearHighlights();
+        else document.querySelectorAll('tr').forEach(tr => tr.classList.remove('row-selected'));
+        
+        const row = e.target.closest('tr');
+        if (row) row.classList.add('row-selected');
+        
+        // Update the title and show the menu
+        const menu = document.getElementById('customContextMenu');
+        const titleEl = document.getElementById('menuTitle');
+        if(titleEl) titleEl.innerText = "Record: " + refNo; 
+        
+        // Make it visible (Tailwind CSS keeps it dead-center)
+        menu.classList.remove('hidden');
+        
+        // Auto-close it when the user clicks anywhere else on the screen
+        const closeMenu = () => { 
+            menu.classList.add('hidden'); 
+            if (typeof clearHighlights === "function") clearHighlights();
+            else document.querySelectorAll('tr').forEach(tr => tr.classList.remove('row-selected'));
+        };
+        setTimeout(() => { document.addEventListener('click', closeMenu, { once: true }); }, 10);
+    }
+
+    function handleMenuAction(action) {
+        if (action === 'edit') editPR(currentActiveId);
+        else if (action === 'delete') deletePR(currentActiveId);
+    }
+
+    function openPRModal() {
+        document.getElementById('prForm').reset();
+        document.getElementById('pr_id').value = "";
+        document.getElementById('prItemsBody').innerHTML = ""; 
+        addPRItem(); // Add one blank row
+        document.getElementById('modalTitle').innerText = "Add New PR";
+        toggleUrgentSection(); 
+        document.getElementById('prModal').classList.remove('hidden');
+    }
+
+    function closePRModal() { document.getElementById('prModal').classList.add('hidden'); }
+
+    async function savePR() {
+        if (!document.getElementById('prForm').checkValidity()) {
+            document.getElementById('prForm').reportValidity();
+            return;
+        }
+
+        gatherItems(); // Package table items into JSON string before sending
+        
+        const formData = new FormData(document.getElementById('prForm'));
+        const res = await fetch('/api/save_pr', { method: 'POST', body: formData });
+        if (res.ok) location.reload();
+        else alert("Failed to save PR.");
+    }
+
+    async function editPR(id) {
+        const res = await fetch(`/api/get_pr/${id}`);
+        const data = await res.json();
+        if (res.ok) {
+            document.getElementById('pr_id').value = data.id;
+            document.getElementById('purchase_no').value = data.purchase_no;
+            document.getElementById('location').value = data.location;
+            
+            // Populate Items Table
+            const tbody = document.getElementById('prItemsBody');
+            tbody.innerHTML = '';
+            if (data.items && data.items.length > 0) {
+                data.items.forEach(item => addPRItem(item.description, item.qty));
+            } else {
+                addPRItem(); // Add blank row if empty
+            }
+
+            document.getElementById('remarks').value = data.remarks || '';
+            document.getElementById('status_select').value = data.status;
+            document.getElementById('urgent_reason').value = data.urgent_reason || '';
+            document.getElementById('doc_date').value = data.doc_date;
+            document.getElementById('po_no_input').value = data.po_no || '';
+            document.getElementById('modalTitle').innerText = "Edit PR #" + data.purchase_no;
+            toggleUrgentSection();
+            document.getElementById('prModal').classList.remove('hidden');
+        }
+    }
+
+    async function deletePR(id) {
+        if (confirm("Are you sure you want to permanently delete this PR?")) {
+            const res = await fetch(`/api/delete_pr/${id}`, { method: 'DELETE' });
+            if (res.ok) location.reload();
+        }
+    }
+</script>
+{% endblock %}

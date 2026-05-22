@@ -1,0 +1,137 @@
+{% extends "base.html" %} 
+
+{% block content %}
+<div class="flex justify-between items-center mb-10">
+  <h1 class="text-3xl font-bold text-slate-800">Team Reminders</h1>
+  <button
+    onclick="openModal()"
+    title="Add New Reminder"
+    class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg shadow-lg font-medium transition-all transform hover:scale-105"
+  >
+    <i class="fas fa-plus mr-2"></i> Add Reminder
+  </button>
+</div>
+
+<div id="remindersGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+  {% for r in reminders %}
+  <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition flex flex-col min-h-[160px] relative group">
+    <p class="text-slate-600 flex-grow whitespace-pre-wrap italic">"{{ r.note }}"</p>
+    
+    <div class="mt-4 flex justify-between items-center border-t pt-4">
+      <div class="flex items-center space-x-2">
+        <div class="w-6 h-6 bg-slate-100 rounded-full flex items-center justify-center text-[10px] font-bold text-slate-500 uppercase border border-slate-200">
+            {{ r.author_name[:1] if r.author_name else 'S' }}
+        </div>
+        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            {{ r.author_name if r.author_name else 'System' }}
+        </span>
+      </div>
+
+      <div class="flex space-x-3 text-slate-300">
+          <button title="Edit Reminder" onclick='openEditModal("{{ r.id }}", {{ r.note|tojson|safe }})' class="hover:text-blue-500 transition">
+            <i class="fas fa-edit text-sm"></i>
+          </button>
+          
+          <button title="Delete Reminder" onclick="deleteReminder('{{ r.id }}')" class="hover:text-red-500 transition">
+            <i class="fas fa-trash text-sm"></i>
+          </button>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="col-span-full text-center py-20 bg-white rounded-2xl border-2 border-dashed border-slate-200">
+      <p class="text-slate-400">No team notes yet. Click "Add Reminder" to start!</p>
+  </div>
+  {% endfor %}
+</div>
+
+<div id="reminderModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
+  <div class="bg-white rounded-2xl p-8 w-96 shadow-2xl transform transition-all">
+    <div class="flex justify-between items-center mb-4">
+        <h2 id="modalTitle" class="text-2xl font-bold text-slate-800">New Reminder</h2>
+        <button onclick="closeModal()" title="Close Modal" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+    </div>
+    
+    <input type="hidden" id="editReminderId">
+    
+    <label for="reminderNote" class="hidden">Reminder Content</label>
+    <textarea 
+        id="reminderNote" 
+        title="Reminder Note"
+        class="w-full h-32 p-4 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none bg-slate-50" 
+        placeholder="Write your note here..."></textarea>
+    
+    <div class="flex justify-end mt-6 space-x-3">
+      <button onclick="closeModal()" title="Cancel" class="px-4 py-2 text-slate-500 hover:text-slate-700 font-medium">Cancel</button>
+      <button id="saveBtn" onclick="saveReminder()" title="Save changes" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg shadow-lg font-bold transition-all">
+        Save Note
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function openModal() {
+    document.getElementById("modalTitle").innerText = "Add Team Note";
+    document.getElementById("editReminderId").value = "";
+    document.getElementById("reminderNote").value = "";
+    document.getElementById("reminderModal").classList.remove("hidden");
+  }
+
+  function openEditModal(id, currentNote) {
+    document.getElementById("modalTitle").innerText = "Edit Note";
+    document.getElementById("editReminderId").value = id;
+    document.getElementById("reminderNote").value = currentNote;
+    document.getElementById("reminderModal").classList.remove("hidden");
+  }
+
+  function closeModal() {
+    document.getElementById("reminderModal").classList.add("hidden");
+  }
+
+  async function saveReminder() {
+    const noteValue = document.getElementById("reminderNote").value.trim();
+    const reminderId = document.getElementById("editReminderId").value;
+    
+    if (!noteValue) { 
+        alert("Please enter a note!"); 
+        return; 
+    }
+
+    try {
+        const response = await fetch("/api/save_reminder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            id: reminderId ? reminderId : null, 
+            note: noteValue 
+          }),
+        });
+
+        if (response.ok) {
+          location.reload(); 
+        } else {
+          const errorData = await response.json();
+          alert("Error: " + (errorData.message || "Could not save."));
+        }
+    } catch (err) {
+        console.error("Fetch error:", err);
+        alert("Server connection failed.");
+    }
+  }
+
+  async function deleteReminder(id) {
+    if (confirm("Delete this reminder?")) {
+        const response = await fetch(`/api/delete_reminder/${id}`, { 
+            method: "DELETE" 
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert("Delete failed.");
+        }
+    }
+  }
+</script>
+{% endblock %}

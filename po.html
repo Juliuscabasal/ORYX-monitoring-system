@@ -1,0 +1,475 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* Force fixed layout so columns don't shift or grow */
+    .fit-table {
+        table-layout: fixed;
+        width: 100%;
+    }
+
+    .fit-table th, .fit-table td {
+        white-space: nowrap;
+        padding: 10px 8px !important;
+        font-size: 13px;
+        overflow: hidden; 
+    }
+    
+    /* Truncation logic specifically for Dept */
+    .truncate-target {
+        max-width: 25ch;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: block;
+    }
+
+    /* NEW: Short truncation for DR# and SI# (Approx 4-5 chars + ellipsis) */
+    .truncate-short {
+        max-width: 6ch; 
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: block;
+    }
+
+    .row-selected {
+        background-color: #f0f7ff !important;
+        outline: 2px solid #3b82f6;
+        transition: all 0.1s ease;
+    }
+
+    tr:hover td {
+        background-color: #f8fafc;
+    }
+
+    #customContextMenu {
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    }
+</style>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center hover:shadow-md transition-shadow">
+        <div class="bg-orange-100 p-4 rounded-xl mr-6"><i class="fas fa-clock text-orange-600 text-2xl"></i></div>
+        <div>
+            <p class="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">Total Pending</p>
+            <h3 class="text-3xl font-black text-slate-800">{{ summary.pending }}</h3>
+        </div>
+    </div>
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center hover:shadow-md transition-shadow">
+        <div class="bg-amber-100 p-4 rounded-xl mr-6"><i class="fas fa-exclamation-triangle text-amber-600 text-2xl"></i></div>
+        <div>
+            <p class="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">For Revision</p>
+            <h3 class="text-3xl font-black text-slate-800">{{ summary.revision }}</h3>
+        </div>
+    </div>
+</div>
+
+<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 mb-8 flex flex-wrap items-end gap-6">
+    <div class="flex-1 min-w-[200px]">
+        <label for="export_start" class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Start Date</label>
+        <input type="date" id="export_start" class="w-full p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-green-500 text-sm transition-all">
+    </div>
+    <div class="flex-1 min-w-[200px]">
+        <label for="export_end" class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">End Date</label>
+        <input type="date" id="export_end" class="w-full p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-green-500 text-sm transition-all">
+    </div>
+    <button onclick="downloadExcel()" title="Download Excel Report" class="bg-green-600 hover:bg-green-700 text-white px-8 py-2.5 rounded-lg font-bold transition shadow-lg flex items-center whitespace-nowrap">
+        <i class="fas fa-file-excel mr-2"></i> Export to Excel
+    </button>
+</div>
+
+<div class="flex justify-between items-center mb-8">
+    <h1 class="text-3xl font-bold text-slate-800">PO Monitoring</h1>
+    <div class="flex space-x-4">
+        <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><i class="fas fa-search"></i></span>
+            <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search PO or Dept..." title="Search purchase orders"
+                   class="pl-10 pr-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 w-64 shadow-sm transition-all">
+        </div>
+        <button onclick="openPOModal()" title="Add new purchase order" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg shadow-lg font-medium transition">
+            <i class="fas fa-plus mr-2"></i> Add PO
+        </button>
+    </div>
+</div>
+
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+    <table class="w-full text-left border-collapse fit-table" id="poTable">
+        <thead class="bg-slate-50 border-b border-slate-100">
+            <tr>
+                <th class="p-4 font-bold text-slate-600 uppercase w-[60px]">Item</th>
+                <th class="p-4 font-bold text-slate-600 uppercase w-[75px]">Date</th>
+                <th class="p-4 font-bold text-slate-600 uppercase w-[185px]">PO#</th>
+                <th class="p-4 font-bold text-slate-600 uppercase w-[185px]">Department</th>
+                <th class="p-4 font-bold text-slate-600 uppercase w-[80px]">DR#</th>
+                <th class="p-4 font-bold text-slate-600 uppercase w-[80px]">SI#</th>
+                <th class="p-4 font-bold text-slate-600 uppercase text-center w-[60px]">Files</th>
+                <th class="p-4 font-bold text-slate-600 uppercase w-[115px]">Status</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-50">
+            {% for po in pos %}
+            <tr class="transition group cursor-default" oncontextmenu="showContextMenu(event, '{{ po.id }}', '{{ po.po_no }}')">
+                <td class="p-4 text-slate-400 text-xs font-mono">#{{ "%03d" | format(pos|length - loop.index0) }}</td>
+                <td class="p-4 text-slate-600 text-[11px]">{{ po.date_received[5:10] if po.date_received else '--' }}</td>
+                <td class="p-4 font-medium text-blue-600">{{ po.po_no }}</td>
+                
+                <td class="p-4"><span class="truncate-target text-slate-600" title="{{ po.dept }}">{{ po.dept }}</span></td>
+                
+                <td class="p-4 text-slate-600">
+                    {% if po.dr_no %}
+                        <span class="truncate-short font-mono text-xs" title="{{ po.dr_no }}">{{ po.dr_no }}</span>
+                    {% else %}
+                        <span class="text-slate-400">--</span>
+                    {% endif %}
+                </td>
+                
+                <td class="p-4 text-slate-600">
+                    {% if po.si_no %}
+                        <span class="truncate-short font-mono text-xs" title="{{ po.si_no }}">{{ po.si_no }}</span>
+                    {% else %}
+                        <span class="text-slate-400">--</span>
+                    {% endif %}
+                </td>
+                
+                <td class="p-4 text-center">
+                    {% if po.files %}
+                    <button onclick="viewFiles('{{ po.po_no }}', '{{ po.id }}')" title="View documents" class="text-blue-500 hover:text-blue-700">
+                        <i class="fas fa-paperclip"></i>
+                    </button>
+                    {% endif %}
+                </td>
+                <td class="p-4">
+                    {% set s = po.status.lower() if po.status else '' %}
+                    <div class="flex items-center space-x-2">
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border
+                            {{ 'bg-green-100 text-green-700 border-green-200' if s == 'delivered' }}
+                            {{ 'bg-red-100 text-red-700 border-red-200' if s == 'cancelled' }}
+                            {{ 'bg-blue-100 text-blue-700 border-blue-200' if s == 'billed' }}
+                            {{ 'bg-amber-100 text-amber-700 border-amber-200' if s == 'for revision' }}
+                            {{ 'bg-orange-100 text-orange-700 border-orange-200' if s == 'pending' }}
+                            {{ 'bg-slate-100 text-slate-600 border-slate-200' if s == 'others' or s == '' }}">
+                            {{ po.status if po.status else 'Unset' }}
+                        </span>
+                        {% if po.status_note %}
+                        <button onclick="viewStatusNote('{{ po.po_no }}', '{{ po.status_note }}')" title="View status note" class="text-amber-500">
+                            <i class="fas fa-comment-dots"></i>
+                        </button>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div id="customContextMenu" class="hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white shadow-[0_0_50px_rgba(0,0,0,0.2)] rounded-2xl border border-slate-200 py-3 w-64 z-[9999]">
+    <div class="px-5 py-2 border-b border-slate-100 mb-2">
+        <p id="menuTitle" class="text-xs font-black text-slate-400 uppercase tracking-widest">Options</p>
+    </div>
+    <button onclick="handleMenuAction('edit')" title="Edit this record" class="w-full text-left px-5 py-3 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-600 flex items-center transition font-medium">
+        <i class="fas fa-edit mr-3 text-blue-500 text-lg"></i> Edit Record
+    </button>
+    <button onclick="handleMenuAction('delete')" title="Delete this record" class="w-full text-left px-5 py-3 text-sm text-red-600 hover:bg-red-50 flex items-center transition font-medium">
+        <i class="fas fa-trash-alt mr-3 text-red-400 text-lg"></i> Delete Record
+    </button>
+</div>
+
+<div id="statusNoteModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[80] backdrop-blur-sm">
+    <div class="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl border-t-4 border-amber-500">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="font-bold text-slate-800">Note for PO: <span id="notePoNo" class="text-blue-600"></span></h3>
+            <button onclick="closeStatusNote()" title="Close note" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <p id="fullStatusNote" class="p-4 bg-amber-50 rounded-lg border border-amber-100 text-sm text-slate-700 italic whitespace-pre-wrap"></p>
+        <div class="mt-6 text-right">
+            <button onclick="closeStatusNote()" class="text-sm font-bold text-amber-600 uppercase">Close</button>
+        </div>
+    </div>
+</div>
+
+<div id="fileViewerModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[70] backdrop-blur-sm">
+    <div class="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl">
+        <div class="flex justify-between items-center mb-4 border-b pb-2">
+            <h3 class="font-bold text-slate-800">Files for <span id="viewPoNo" class="text-blue-600"></span></h3>
+            <button onclick="closeFileViewer()" title="Close viewer" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="viewerFileList" class="space-y-2 max-h-60 overflow-y-auto pr-2"></div>
+        <div class="mt-6 text-right">
+            <button onclick="closeFileViewer()" class="text-sm font-bold text-blue-600 uppercase">Close</button>
+        </div>
+    </div>
+</div>
+
+<div id="poModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl w-full max-w-6xl shadow-2xl flex flex-col max-h-[90vh]">
+        <div class="p-6 border-b flex justify-between items-center bg-white rounded-t-2xl">
+            <h2 id="modalTitle" class="text-2xl font-bold text-slate-800">PO Entry</h2>
+            <button onclick="closePOModal()" title="Close modal" class="text-slate-400 hover:text-slate-600 text-xl"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-8">
+            <form id="poForm" onsubmit="event.preventDefault(); savePO();">
+                <input type="hidden" id="po_id">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+                    <div class="space-y-4">
+                        <div><label for="date_delivered" class="block text-sm font-semibold mb-1">Date Received</label><input type="date" id="date_delivered" required title="Date Received" class="w-full p-2 border rounded-lg"></div>
+                        <div><label for="po_no" class="block text-sm font-semibold mb-1">PO#</label><input type="text" id="po_no" required title="PO Number" class="w-full p-2 border rounded-lg"></div>
+                        <div><label for="dept" class="block text-sm font-semibold mb-1">Dept</label><input type="text" id="dept" title="Department" class="w-full p-2 border rounded-lg"></div>
+                        <div><label for="rec_by" class="block text-sm font-semibold mb-1">Delivered To</label><input type="text" id="rec_by" title="Receiver" class="w-full p-2 border rounded-lg"></div>
+                    </div>
+                    <div class="space-y-4">
+                        <div><label for="dr_no" class="block text-sm font-semibold mb-1">DR#</label><input type="text" id="dr_no" title="DR Number" class="w-full p-2 border rounded-lg"></div>
+                        <div><label for="si_no" class="block text-sm font-semibold mb-1">SI#</label><input type="text" id="si_no" title="SI Number" class="w-full p-2 border rounded-lg"></div>
+                        <div>
+                            <label for="status_select" class="block text-sm font-semibold mb-1">Status</label>
+                            <select id="status_select" onchange="toggleStatusNote()" title="Status" class="w-full p-2 border rounded-lg">
+                                <option value="">-- Unset --</option>
+                                <option value="Pending">Pending</option>
+                                <option value="Delivered">Delivered</option>
+                                <option value="Billed">Billed</option>
+                                <option value="For Revision">For Revision</option>
+                                <option value="Cancelled">Cancelled</option>
+                                <option value="Others">Others</option>
+                            </select>
+                        </div>
+                        <div id="statusNoteContainer" class="hidden">
+                            <label for="status_note" class="block text-sm font-semibold mb-1">Note</label>
+                            <input type="text" id="status_note" title="Status Note" class="w-full p-2 border border-amber-200 bg-amber-50 rounded-lg">
+                        </div>
+                        <div><label for="attachments" class="block text-sm font-semibold mb-1">Attachments</label><input type="file" id="attachments" name="attachments" multiple title="Upload Files" class="w-full text-xs"></div>
+                    </div>
+                </div>
+                
+                <div class="mt-8 border-t pt-8">
+                    <div class="flex justify-between items-center mb-6">
+                        <h4 class="text-lg font-bold text-slate-800">Itemized Breakdown</h4>
+                        <button type="button" onclick="addNewItemRow()" title="Add Item" class="bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-bold">Add Item</button>
+                    </div>
+                    <div class="bg-slate-50 rounded-2xl border overflow-hidden">
+                        <table class="w-full text-left text-xs" id="itemsTable">
+                            <thead class="bg-slate-100 border-b">
+                                <tr>
+                                    <th class="p-4 w-12 text-center">PR</th>
+                                    <th class="p-4">Item Description</th>
+                                    <th class="p-4 w-24 text-center">Qty</th>
+                                    <th class="p-4 w-40">Status</th>
+                                    <th class="p-4">Remarks</th>
+                                    <th class="p-4 w-12 text-center"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="itemsList"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="p-6 border-t bg-slate-50 flex justify-end space-x-4 rounded-b-2xl">
+            <button type="button" onclick="closePOModal()" class="px-6 py-2 text-slate-500 font-bold">Cancel</button>
+            <button type="button" onclick="savePO()" class="px-10 py-2 bg-blue-600 text-white rounded-xl font-bold">Save Order</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentActiveId = null;
+
+    function clearHighlights() {
+        document.querySelectorAll('tr').forEach(tr => tr.classList.remove('row-selected'));
+    }
+
+    function showContextMenu(e, id, refNo) {
+        e.preventDefault(); // Stop the default browser right-click menu
+        currentActiveId = id;
+        
+        // Highlight the selected row
+        if (typeof clearHighlights === "function") clearHighlights();
+        else document.querySelectorAll('tr').forEach(tr => tr.classList.remove('row-selected'));
+        
+        const row = e.target.closest('tr');
+        if (row) row.classList.add('row-selected');
+        
+        // Update the title and show the menu
+        const menu = document.getElementById('customContextMenu');
+        const titleEl = document.getElementById('menuTitle');
+        if(titleEl) titleEl.innerText = "Record: " + refNo; 
+        
+        // Make it visible (Tailwind CSS keeps it dead-center)
+        menu.classList.remove('hidden');
+        
+        // Auto-close it when the user clicks anywhere else on the screen
+        const closeMenu = () => { 
+            menu.classList.add('hidden'); 
+            if (typeof clearHighlights === "function") clearHighlights();
+            else document.querySelectorAll('tr').forEach(tr => tr.classList.remove('row-selected'));
+        };
+        setTimeout(() => { document.addEventListener('click', closeMenu, { once: true }); }, 10);
+    }
+
+    function handleMenuAction(action) {
+        if (action === 'edit') editPO(currentActiveId);
+        else if (action === 'delete') deletePO(currentActiveId);
+        document.getElementById('customContextMenu').classList.add('hidden');
+        clearHighlights();
+    }
+
+    function openPOModal() {
+        document.getElementById('poForm').reset();
+        document.getElementById('po_id').value = "";
+        document.getElementById('modalTitle').innerText = "Add New Order";
+        document.getElementById('itemsList').innerHTML = "";
+        addNewItemRow();
+        toggleStatusNote();
+        document.getElementById('poModal').classList.remove('hidden');
+    }
+
+    function closePOModal() { document.getElementById('poModal').classList.add('hidden'); }
+    function closeFileViewer() { document.getElementById('fileViewerModal').classList.add('hidden'); }
+
+    async function editPO(id) {
+        try {
+            const res = await fetch(`/api/get_po/${id}`);
+            const data = await res.json();
+            if (res.ok) {
+                document.getElementById('po_id').value = data.id;
+                document.getElementById('date_delivered').value = data.date_received;
+                document.getElementById('po_no').value = data.po_no;
+                document.getElementById('dept').value = data.dept;
+                document.getElementById('rec_by').value = data.received_by;
+                document.getElementById('dr_no').value = data.dr_no;
+                document.getElementById('si_no').value = data.si_no;
+                document.getElementById('status_select').value = data.status || "";
+                document.getElementById('status_note').value = data.status_note || '';
+                document.getElementById('itemsList').innerHTML = "";
+                if (data.items && data.items.length > 0) { data.items.forEach(i => addNewItemRow(i)); } 
+                else { addNewItemRow(); }
+                toggleStatusNote();
+                document.getElementById('modalTitle').innerText = "Edit Order #" + data.po_no;
+                document.getElementById('poModal').classList.remove('hidden');
+            }
+        } catch (err) { alert("Could not load details."); }
+    }
+
+    async function savePO() {
+        const formData = new FormData();
+        formData.append('po_id', document.getElementById('po_id').value);
+        formData.append('date_delivered', document.getElementById('date_delivered').value);
+        formData.append('po_no', document.getElementById('po_no').value);
+        formData.append('dept', document.getElementById('dept').value);
+        formData.append('rec_by', document.getElementById('rec_by').value);
+        formData.append('dr_no', document.getElementById('dr_no').value);
+        formData.append('si_no', document.getElementById('si_no').value);
+        formData.append('status', document.getElementById('status_select').value);
+        formData.append('status_note', document.getElementById('status_note').value);
+        const items = Array.from(document.querySelectorAll('.item-row')).map(row => ({
+            pr_checked: row.querySelector('.pr-check').checked,
+            description: row.querySelector('.item-desc').value,
+            qty: row.querySelector('.item-qty').value,
+            status: row.querySelector('.item-status').value,
+            remarks: row.querySelector('.item-remarks').value
+        }));
+        formData.append('items_json', JSON.stringify(items));
+        const fileInput = document.getElementById('attachments');
+        for (let file of fileInput.files) formData.append('attachments', file);
+        const res = await fetch('/api/save_po', { method: 'POST', body: formData });
+        if (res.ok) location.reload();
+        else alert("Failed to save.");
+    }
+
+    async function deletePO(id) {
+        if(confirm("Delete permanently?")) {
+            const res = await fetch(`/api/delete_po/${id}`, { method: 'DELETE' });
+            if (res.ok) location.reload();
+        }
+    }
+
+    function downloadExcel() {
+        const start = document.getElementById('export_start').value;
+        const end = document.getElementById('export_end').value;
+        if (!start || !end) { alert("Please select dates!"); return; }
+        window.location.href = `/api/export_po_excel?start=${start}&end=${end}`;
+    }
+
+    function filterTable() {
+        const input = document.getElementById("searchInput").value.toUpperCase();
+        const tr = document.getElementById("poTable").getElementsByTagName("tr");
+        for (let i = 1; i < tr.length; i++) {
+            let txt = tr[i].innerText.toUpperCase();
+            tr[i].style.display = txt.includes(input) ? "" : "none";
+        }
+    }
+
+    function toggleStatusNote() {
+        const status = document.getElementById('status_select').value;
+        const container = document.getElementById('statusNoteContainer');
+        if (container) {
+            container.classList.toggle('hidden', status !== 'Others');
+            if (status !== 'Others') document.getElementById('status_note').value = '';
+        }
+    }
+
+    function addNewItemRow(data = {}) {
+        const tbody = document.getElementById('itemsList');
+        const row = document.createElement('tr');
+        row.className = "border-b item-row bg-white hover:bg-slate-50";
+        const currentStatus = data.status || "";
+        row.innerHTML = `
+            <td class="p-3 text-center"><input type="checkbox" class="pr-check w-4 h-4 rounded text-blue-600" ${data.pr_checked ? 'checked' : ''} title="PR checked"></td>
+            <td class="p-3"><input type="text" class="item-desc w-full p-2 border rounded" value="${data.description || ''}" title="Item description"></td>
+            <td class="p-3"><input type="number" class="item-qty w-full p-2 border rounded text-center" value="${data.qty || 1}" title="Quantity"></td>
+            <td class="p-3">
+                <select class="item-status w-full p-2 border rounded" title="Item status">
+                    <option value="" ${currentStatus === '' ? 'selected' : ''}>-- Select --</option>
+                    <option value="Waiting for Suppliers Delivery" ${currentStatus === 'Waiting for Suppliers Delivery' ? 'selected' : ''}>Waiting Delivery</option>
+                    <option value="Cancelled" ${currentStatus === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
+                    <option value="For Delivery" ${currentStatus === 'For Delivery' ? 'selected' : ''}>For Delivery</option>
+                    <option value="Endorsed to Technical" ${currentStatus === 'Endorsed to Technical' ? 'selected' : ''}>Technical</option>
+                    <option value="Delivered" ${currentStatus === 'Delivered' ? 'selected' : ''}>Delivered</option>
+                </select>
+            </td>
+            <td class="p-3"><input type="text" class="item-remarks w-full p-2 border rounded" value="${data.remarks || ''}" title="Remarks"></td>
+            <td class="p-3 text-center"><button type="button" onclick="this.closest('tr').remove()" class="text-red-400" title="Remove item"><i class="fas fa-trash"></i></button></td>`;
+        tbody.appendChild(row);
+    }
+
+    async function viewFiles(poNo, id) {
+        const res = await fetch(`/api/get_po/${id}`);
+        const data = await res.json();
+        if (res.ok) {
+            document.getElementById('viewPoNo').innerText = poNo;
+            const list = document.getElementById('viewerFileList');
+            list.innerHTML = data.files.length ? data.files.map(f => ` 
+                <div id="file-row-${f.id}" class="flex justify-between items-center p-3 bg-slate-50 rounded-lg border mb-2">
+                    <span class="text-xs truncate w-40 font-medium text-slate-600">${f.filename.split('_').slice(2).join('_')}</span>
+                    <div class="flex items-center space-x-3">
+                        <a href="/download/${f.filename}" target="_blank" class="text-blue-600 hover:text-blue-800" title="Download"><i class="fas fa-download"></i></a>
+                        <button onclick="deleteFile(${f.id}, 'po')" class="text-red-400 hover:text-red-600 transition" title="Delete File"><i class="fas fa-trash-alt"></i></button>
+                    </div>
+                </div>`).join('') : '<p class="text-center text-xs text-slate-400 italic">No files.</p>';
+            document.getElementById('fileViewerModal').classList.remove('hidden');
+        }
+    }
+
+    async function deleteFile(fileId, type) {
+        if (!confirm("Delete this specific file?")) return;
+        const url = type === 'po' ? `/api/delete_po_file/${fileId}` : `/api/delete_uat_file/${fileId}`;
+        const res = await fetch(url, { method: 'DELETE' });
+        if (res.ok) {
+            document.getElementById(`file-row-${fileId}`).remove();
+            const list = document.getElementById('viewerFileList');
+            if (list.children.length === 0) list.innerHTML = '<p class="text-center text-xs text-slate-400 italic">No files.</p>';
+        } else {
+            alert("Delete failed.");
+        }
+    }
+
+    function viewStatusNote(poNo, note) {
+        document.getElementById('notePoNo').innerText = poNo;
+        document.getElementById('fullStatusNote').innerText = note;
+        document.getElementById('statusNoteModal').classList.remove('hidden');
+    }
+
+    function closeStatusNote() { document.getElementById('statusNoteModal').classList.add('hidden'); }
+    function closeFileViewer() { document.getElementById('fileViewerModal').classList.add('hidden'); }
+</script>
+{% endblock %}
