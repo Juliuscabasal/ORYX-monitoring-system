@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ORYX System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-slate-50 flex">
+    <div class="w-64 h-screen bg-slate-900 text-white fixed flex flex-col shadow-xl z-20">
+        <div class="p-8 text-3xl font-extrabold text-blue-400 border-b border-slate-800 tracking-tighter">ORYX</div>
+        
+        <nav class="mt-8 flex-1 px-4 space-y-2">
+            <a href="/" 
+               class="flex items-center py-3 px-4 rounded-xl transition-all group {{ 'bg-blue-600 text-white shadow-lg' if request.path == '/' else 'text-slate-400 hover:bg-slate-800 hover:text-white' }}">
+                <i class="fas fa-sticky-note mr-4 {{ 'text-white' if request.path == '/' else 'text-blue-400' }}"></i> 
+                <span class="font-bold text-sm">Reminders</span>
+            </a>
+
+            <a href="/po-monitoring" 
+               class="flex items-center py-3 px-4 rounded-xl transition-all group {{ 'bg-blue-600 text-white shadow-lg' if request.path == '/po-monitoring' else 'text-slate-400 hover:bg-slate-800 hover:text-white' }}">
+                <i class="fas fa-file-invoice-dollar mr-4 {{ 'text-white' if request.path == '/po-monitoring' else 'text-blue-400' }}"></i> 
+                <span class="font-bold text-sm">PO Monitoring</span>
+            </a>
+
+            <a href="{{ url_for('pr_monitoring_page') }}" 
+               class="flex items-center py-3 px-4 rounded-xl transition-all group {{ 'bg-blue-600 text-white shadow-lg' if request.path == '/pr-monitoring' else 'text-slate-400 hover:bg-slate-800 hover:text-white' }}">
+                <i class="fas fa-file-invoice mr-4 {{ 'text-white' if request.path == '/pr-monitoring' else 'text-blue-400' }}"></i>
+                <span class="font-bold text-sm">PR Monitoring</span>
+            </a>
+
+            <a href="/uat-monitoring" 
+               class="flex items-center py-3 px-4 rounded-xl transition-all group {{ 'bg-blue-600 text-white shadow-lg' if request.path == '/uat-monitoring' else 'text-slate-400 hover:bg-slate-800 hover:text-white' }}">
+                <i class="fas fa-vial mr-4 {{ 'text-white' if request.path == '/uat-monitoring' else 'text-blue-400' }}"></i> 
+                <span class="font-bold text-sm">UAT Monitoring</span>
+            </a>
+        </nav>
+
+        {% if current_user.is_authenticated %}
+        <div class="p-4 border-t border-slate-800 bg-slate-900/50">
+            <div class="flex items-center justify-between bg-slate-800 p-3 rounded-xl">
+                <div class="flex items-center space-x-3 overflow-hidden">
+                    <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-sm shrink-0">
+                        {{ current_user.full_name[:1].upper() }}
+                    </div>
+                    <div class="truncate">
+                        <p class="text-xs font-bold truncate">{{ current_user.full_name }}</p>
+                        <p class="text-[10px] text-slate-400 uppercase tracking-tighter">Logged In</p>
+                    </div>
+                </div>
+                <a href="{{ url_for('logout') }}" title="Logout" class="text-slate-400 hover:text-red-400 transition-colors ml-2">
+                    <i class="fas fa-sign-out-alt"></i>
+                </a>
+            </div>
+        </div>
+        {% endif %}
+        
+        <div class="p-4 text-[10px] text-slate-500 text-center border-t border-slate-800 bg-slate-950">
+            © 2026 ORYX Internal v1.0
+        </div>
+    </div>
+
+    <div class="ml-64 w-full flex flex-col min-h-screen">
+        {% if current_user.is_authenticated %}
+        <header class="bg-white border-b border-slate-100 px-10 py-4 flex justify-end items-center sticky top-0 z-10">
+            <div class="text-right">
+                <span class="text-xs text-slate-400 font-bold uppercase tracking-widest">Team AMS</span>
+                <p class="text-sm font-medium text-slate-600">Welcome back, <span class="text-blue-600 font-bold">{{ current_user.full_name }}</span></p>
+            </div>
+        </header>
+        {% endif %}
+
+        <main class="p-10 flex-1">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>
